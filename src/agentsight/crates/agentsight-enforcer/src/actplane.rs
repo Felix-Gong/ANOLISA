@@ -184,7 +184,7 @@ impl ActPlaneBackend {
         kernel_pid: Option<i32>,
     ) -> Vec<String> {
         let mut errors = Vec::new();
-        let control_pid = std::process::id() as i32;
+        let control_pid = resolve_to_host_pid(std::process::id() as i32, 0);
         if let Err(error) = self.engine.unbind_pid_from_domain(control_pid, id) {
             errors.push(format!("unbind control pid: {error}"));
         }
@@ -306,7 +306,7 @@ impl ActPlaneBackend {
             );
         }
 
-        let control_pid = std::process::id() as i32;
+        let control_pid = resolve_to_host_pid(std::process::id() as i32, 0);
         let control_state = CapState {
             scope_id: 1,
             labels: label,
