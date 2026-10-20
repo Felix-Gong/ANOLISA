@@ -223,9 +223,19 @@ pub enum InterruptionAction {
     /// Example:
     ///   agentsight interruption session abc123-session-id
     ///   agentsight interruption session abc123-session-id --unresolved
+    ///   agentsight interruption session abc123-session-id --type llm_error --severity high
     Session {
         /// The session_id to query
         session_id: String,
+
+        /// Filter by interruption type.
+        #[structopt(long = "type", possible_values = interruption_type_values())]
+        itype: Option<String>,
+
+        /// Filter by severity level.
+        /// Values: critical, high, medium, low
+        #[structopt(long, possible_values = &["critical", "high", "medium", "low"])]
+        severity: Option<String>,
 
         /// Show only unresolved events
         #[structopt(long, conflicts_with = "resolved")]
@@ -248,9 +258,19 @@ pub enum InterruptionAction {
     /// Example:
     ///   agentsight interruption conversation abc123-conversation-id
     ///   agentsight interruption conversation abc123-conversation-id --unresolved
+    ///   agentsight interruption conversation abc123-conversation-id --severity critical
     Conversation {
         /// The conversation_id to query
         conversation_id: String,
+
+        /// Filter by interruption type.
+        #[structopt(long = "type", possible_values = interruption_type_values())]
+        itype: Option<String>,
+
+        /// Filter by severity level.
+        /// Values: critical, high, medium, low
+        #[structopt(long, possible_values = &["critical", "high", "medium", "low"])]
+        severity: Option<String>,
 
         /// Show only unresolved events
         #[structopt(long, conflicts_with = "resolved")]
@@ -471,12 +491,27 @@ impl InterruptionCommand {
 
             InterruptionAction::Session {
                 session_id,
+                itype,
+                severity,
                 unresolved,
                 resolved,
                 json,
             } => {
                 let resolved_filter = resolution_filter(*unresolved, *resolved);
                 match store.list_by_session(session_id) {
+                let resolved_filter = if *unresolved {
+                    Some(false)
+                } else if *resolved {
+                    Some(true)
+                } else {
+                    None
+                };
+                match store.list_by_session_filtered(
+                    session_id,
+                    itype.as_deref(),
+                    severity.as_deref(),
+                    resolved_filter,
+                ) {
                     Ok(rows) => {
                         let rows: Vec<_> = rows
                             .into_iter()
@@ -503,6 +538,8 @@ impl InterruptionCommand {
 
             InterruptionAction::Conversation {
                 conversation_id,
+                itype,
+                severity,
                 unresolved,
                 resolved,
                 json,
@@ -514,6 +551,20 @@ impl InterruptionCommand {
                             .into_iter()
                             .filter(|r| keep_resolution(r, resolved_filter))
                             .collect();
+                let resolved_filter = if *unresolved {
+                    Some(false)
+                } else if *resolved {
+                    Some(true)
+                } else {
+                    None
+                };
+                match store.list_by_conversation_filtered(
+                    conversation_id,
+                    itype.as_deref(),
+                    severity.as_deref(),
+                    resolved_filter,
+                ) {
+                    Ok(rows) => {
                         if *json {
                             print_json(&rows);
                         } else {
@@ -532,6 +583,13 @@ impl InterruptionCommand {
                     }
                 }
             }
+                    }
+                    Err(e) => {
+                        eprintln!("Query error: {e}");
+                        std::process::exit(1);
+                    }
+                }
+            },
 
             InterruptionAction::Resolve { interruption_id } => {
                 match store.resolve(interruption_id) {
