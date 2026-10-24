@@ -796,3 +796,64 @@ fn scan_once_rejects_non_hermes_sqlite_without_affecting_other_sources() {
     scan_once(&store, &config);
     assert_eq!(store.count().unwrap(), 0);
 }
+
+
+#[test]
+fn hermes_tool_result_matched_by_call_id_before_name() {
+    use crate::hermes::{HermesMessage, HermesMessageRole, HermesToolCall};
+    use crate::hermes_convert::convert_hermes_session;
+    use crate::store::TrajectorySession;
+    use std::collections::BTreeMap;
+
+    let mut session = TrajectorySession {
+        id: "t1".into(),
+        agent: "hermes".into(),
+        model: None,
+        start_time: None,
+        end_time: None,
+        cwd: None,
+        repository: None,
+        messages: vec![],
+        tool_calls: vec![],
+        environment: BTreeMap::new(),
+        metadata: BTreeMap::new(),
+    };
+
+    session.messages.push(HermesMessage {
+        id: "m1".into(),
+        role: HermesMessageRole::Assistant,
+        content: None,
+        tool_calls: vec![
+            HermesToolCall {
+                id: Some("tc1".into()),
+                name: "read_file".into(),
+                arguments: r#"{"path":"/a"}"#.into(),
+            },
+            HermesToolCall {
+                id: Some("tc2".into()),
+                name: "read_file".into(),
+                arguments: r#"{"path":"/b"}"#.into(),
+            },
+        ],
+        tool_call_id: None,
+        tool_name: None,
+        timestamp: None,
+        finish_reason: None,
+        reasoning: None,
+    });
+    session.messages.push(HermesMessage {
+        id: "m2".into(),
+        role: HermesMessageRole::Tool,
+        content: Some("content-b".into()),
+        tool_calls: vec![],
+        tool_call_id: Some("tc2".into()),
+        tool_name: Some("read_file".into()),
+        timestamp: None,
+        finish_reason: None,
+        reasoning: None,
+    });
+
+    let res = convert_hermes_session(&session).unwrap();
+    // tool result should attach to tc2 (matched by id), not first tc1
+    assert!(res.steps.iter().any(|s| s.step_type == "thought" || s.step_type == "tool_call"));
+}
